@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -8,15 +8,23 @@ import {
   TouchableOpacity,
   PanResponder,
   GestureResponderEvent,
-  PanResponderGestureState,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import { EventType, GamePlayer, Player } from '../lib/supabase';
 import { FONTS } from '../constants/fonts';
 
 const { width, height } = Dimensions.get('window');
+
+// Trail point interface
+interface TrailPoint {
+  x: number;
+  y: number;
+  timestamp: number;
+}
 
 // Haptic feedback helpers
 const lightHaptic = () => {
@@ -65,7 +73,7 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
   const ZONE_WIDTH = width / 4; // 4 columns for consistent layout
   
   const SWIPE_ZONE_TOP = STAT_ZONES_HEIGHT;
-  const STAT_ZONES_TOP = 0;
+  const STAT_ZONES_TOP = 0; 
   
   // Define screen zones as a grid layout (4x2 grid covering full height above swipe zone)
   const STAT_ZONES = {
@@ -159,8 +167,10 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
   const [showPlayerSelect, setShowPlayerSelect] = useState(false);
   const [showAssistModal, setShowAssistModal] = useState(false);
   const [hasMovedOverStatZone, setHasMovedOverStatZone] = useState(false);
+  const [trailPoints, setTrailPoints] = useState<TrailPoint[]>([]);
   
   const lastHoveredZoneRef = useRef<string | null>(null);
+  const trailOpacity = useRef(new Animated.Value(0)).current;
 
   const getZoneAtPosition = (x: number, y: number): EventType | 'shot2_attempt' | 'shot3_attempt' | 'assist' | null => {
     for (const [eventType, zone] of Object.entries(STAT_ZONES)) {
@@ -174,6 +184,160 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
       }
     }
     return null;
+  };
+
+  // Trail utility functions
+  const addTrailPoint = useCallback((x: number, y: number) => {
+    const now = Date.now();
+    setTrailPoints(prevPoints => {
+      // Remove points older than 500ms and limit to 25 points for performance
+      const filteredPoints = prevPoints.filter(point => now - point.timestamp < 500);
+      const limitedPoints = filteredPoints.slice(-24); // Keep last 24 points + new one = 25
+      
+      // Only add point if it's significantly different from the last point (reduces noise)
+      const lastPoint = limitedPoints[limitedPoints.length - 1];
+      if (lastPoint) {
+        const distance = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2));
+        if (distance < 3) return limitedPoints; // Skip if movement is too small
+      }
+      
+      return [...limitedPoints, { x, y, timestamp: now }];
+    });
+  }, []);
+
+  const clearTrail = useCallback(() => {
+    setTrailPoints([]);
+    trailOpacity.setValue(0);
+  }, []);
+
+  const fadeOutTrail = useCallback(() => {
+    Animated.timing(trailOpacity, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setTrailPoints([]);
+    });
+  }, []);
+
+  // Generate SVG path from trail points
+  const generateTrailPath = useCallback((points: TrailPoint[]) => {
+    if (points.length < 2) return '';
+    
+    let path = `M ${points[0].x} ${points[0].y}`;
+    
+    for (let i = 1; i < points.length - 1; i++) {
+      const currentPoint = points[i];
+      const nextPoint = points[i + 1];
+      
+      // Use quadratic bezier curves for smooth trail
+      const controlX = (currentPoint.x + nextPoint.x) / 2;
+      const controlY = (currentPoint.y + nextPoint.y) / 2;
+      
+      path += ` Q ${currentPoint.x} ${currentPoint.y} ${controlX} ${controlY}`;
+    }
+    
+    // Add the last point
+    if (points.length > 1) {
+      const lastPoint = points[points.length - 1];
+      path += ` L ${lastPoint.x} ${lastPoint.y}`;
+    }
+    
+    return path;
+  }, []);
+
+  // Generate multiple trail segments with tapering effect
+  const generateTaperedTrailPaths = useCallback((points: TrailPoint[]) => {
+    if (points.length < 2) return [];
+    
+    const segments = [];
+    const segmentLength = Math.max(1, Math.floor(points.length / 8)); // Create 8 segments
+    
+    for (let i = 0; i < points.length - 1; i += segmentLength) {
+      const segmentPoints = points.slice(i, Math.min(i + segmentLength + 1, points.length));
+      if (segmentPoints.length < 2) continue;
+      
+      const path = generateTrailPath(segmentPoints);
+      const progress = i / (points.length - 1); // 0 to 1, where 0 is oldest (tail), 1 is newest (tip)
+      
+      // Calculate width: tip (newest) is thickest, tail (oldest) is thinnest
+      const maxWidth = 18; // Made tip thicker
+      const minWidth = 2;
+      const width = minWidth + (maxWidth - minWidth) * progress; // Tip gets thicker as progress approaches 1
+      
+      // Keep consistent opacity as requested
+      const opacity = 0.9;
+      
+      segments.push({
+        path,
+        width,
+        opacity,
+        isNewest: i >= points.length - segmentLength - 1
+      });
+    }
+    
+    return segments;
+  }, [generateTrailPath]);
+
+  // Trail renderer component
+  const renderTrail = () => {
+    if (trailPoints.length < 2) return null;
+    
+    const trailSegments = generateTaperedTrailPaths(trailPoints);
+    if (trailSegments.length === 0) return null;
+    
+    return (
+      <Animated.View 
+        style={[
+          styles.trailContainer,
+          { opacity: trailOpacity }
+        ]}
+        pointerEvents="none"
+      >
+        <Svg 
+          height={height} 
+          width={width}
+          style={StyleSheet.absoluteFillObject}
+        >
+          {trailSegments.map((segment, index) => (
+            <React.Fragment key={index}>
+              {/* Outer glow for each segment */}
+              <Path
+                d={segment.path}
+                stroke="rgba(255,255,255,0.2)"
+                strokeWidth={segment.width + 4}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+                opacity="0.4"
+              />
+              {/* Main trail segment */}
+              <Path
+                d={segment.path}
+                stroke="rgba(255,255,255,0.95)"
+                strokeWidth={segment.width}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+                opacity={segment.opacity}
+              />
+              {/* Inner bright line for newest segments */}
+              {segment.isNewest && (
+                <Path
+                  d={segment.path}
+                  stroke="rgba(255,255,255,1.0)"
+                  strokeWidth={Math.max(1, segment.width * 0.3)}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                  opacity="1.0"
+                />
+              )}
+            </React.Fragment>
+          ))}
+        </Svg>
+      </Animated.View>
+    );
   };
 
   const panResponder = PanResponder.create({
@@ -191,6 +355,11 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
         lastHoveredZoneRef.current = null;
         setCurrentPosition({ x: pageX, y: pageY });
         
+        // Initialize trail with offset correction
+        clearTrail();
+        addTrailPoint(pageX, pageY - 95);
+        trailOpacity.setValue(1);
+        
         lightHaptic();
       } catch (error) {
         console.error('Error in gesture start:', error);
@@ -205,6 +374,9 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
         const { pageX, pageY } = event.nativeEvent;
         
         setCurrentPosition({ x: pageX, y: pageY });
+        
+        // Add trail point with offset correction (finger appears ~70px higher than pageY)
+        addTrailPoint(pageX, pageY - 95);
         
         // Check if user has moved over a stat zone
         const currentZone = getZoneAtPosition(pageX, pageY);
@@ -229,6 +401,9 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
       try {
         const { pageX, pageY } = event.nativeEvent;
         
+        // Add final trail point with offset correction
+        addTrailPoint(pageX, pageY - 95);
+        
         // Check if user ended in swipe zone after moving over stat zones (cancel action)
         const isInSwipeZone = pageY >= SWIPE_ZONE_TOP;
         
@@ -250,8 +425,12 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
             lightHaptic();
           }
         }
+        
+        // Fade out trail
+        fadeOutTrail();
       } catch (error) {
         console.error('Error in gesture end:', error);
+        fadeOutTrail();
       }
       
       // Reset state
@@ -267,6 +446,9 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
       setCurrentPosition({ x: -1, y: -1 });
       setHasMovedOverStatZone(false);
       lastHoveredZoneRef.current = null;
+      
+      // Clear trail immediately
+      clearTrail();
     },
   });
 
@@ -353,6 +535,7 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
     return (
       <>
         {renderStatZones()}
+        {renderTrail()}
 
         {/* Swipe Zone */}
         <View style={[styles.container, { height: SWIPE_ZONE_HEIGHT }]}>
@@ -532,6 +715,14 @@ const styles = StyleSheet.create({
   },
   disabledInstructionText: {
     color: '#999',
+  },
+  trailContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 3,
   },
   zonesOverlay: {
     position: 'absolute',
