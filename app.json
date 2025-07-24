@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "statswipe",
+    "slug": "statswipe",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.statswipe.app",
+      "usesAppleSignIn": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.statswipe.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "statswipe",
+    "plugins": [
+      "expo-apple-authentication",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Orbitron-Regular.ttf",
+            "./assets/fonts/Orbitron-Medium.ttf",
+            "./assets/fonts/Orbitron-Bold.ttf"
+          ]
+        }
+      ]
+    ]
+  }
+}
