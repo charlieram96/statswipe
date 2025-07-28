@@ -38,6 +38,7 @@ export const GameScreen: React.FC = () => {
   const styles = createStyles(theme);
   const {
     gameId,
+    mode,
     teamA,
     teamB,
     selectedPlayer,
@@ -56,6 +57,7 @@ export const GameScreen: React.FC = () => {
   const [showAssistModal, setShowAssistModal] = useState(false);
   const [pendingShotEvent, setPendingShotEvent] = useState<any>(null);
   const [showShotTypeModal, setShowShotTypeModal] = useState(false);
+  const [swipeSelectedPlayer, setSwipeSelectedPlayer] = useState<GamePlayer | null>(null);
 
   // Clock timer - 100ms intervals for tenth-second precision
   useEffect(() => {
@@ -266,6 +268,7 @@ export const GameScreen: React.FC = () => {
   };
 
 
+
   const handleEndGame = () => {
     Alert.alert(
       'End Game',
@@ -405,8 +408,12 @@ export const GameScreen: React.FC = () => {
                   key={gamePlayer.id}
                   gamePlayer={gamePlayer}
                   player={player}
-                  isSelected={selectedPlayer?.id === gamePlayer.id}
-                  onPress={() => selectPlayer(gamePlayer)}
+                  isSelected={swipeSelectedPlayer?.id === gamePlayer.id}
+                  onPress={() => {
+                    console.log('Player selected:', gamePlayer.id);
+                    setSwipeSelectedPlayer(gamePlayer);
+                    selectPlayer(gamePlayer);
+                  }}
                   stats={calculatePlayerStats(gamePlayer)}
                   fullStats={calculateFullStats(gamePlayer)}
                 />
@@ -433,8 +440,12 @@ export const GameScreen: React.FC = () => {
                   key={gamePlayer.id}
                   gamePlayer={gamePlayer}
                   player={player}
-                  isSelected={selectedPlayer?.id === gamePlayer.id}
-                  onPress={() => selectPlayer(gamePlayer)}
+                  isSelected={swipeSelectedPlayer?.id === gamePlayer.id}
+                  onPress={() => {
+                    console.log('Player selected:', gamePlayer.id);
+                    setSwipeSelectedPlayer(gamePlayer);
+                    selectPlayer(gamePlayer);
+                  }}
                   stats={calculatePlayerStats(gamePlayer)}
                   fullStats={calculateFullStats(gamePlayer)}
                 />
@@ -516,6 +527,9 @@ export const GameScreen: React.FC = () => {
         allPlayers={getAllPlayers()}
         teamA={teamA}
         teamB={teamB}
+        selectedPlayer={swipeSelectedPlayer}
+        onPlayerDeselected={() => setSwipeSelectedPlayer(null)}
+        gameMode={mode}
       />
     </SafeAreaView>
     </GestureHandlerRootView>

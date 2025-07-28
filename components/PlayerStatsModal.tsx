@@ -224,6 +224,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     maxHeight: '80%',
     borderWidth: 1,
     borderColor: theme.border,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
@@ -232,6 +233,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     padding: 16,
     borderBottomWidth: 2,
     borderBottomColor: theme.border,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   teamAHeader: {
     backgroundColor: theme.surface,
@@ -362,6 +365,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: theme.border,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
   },
   closeButtonText: {
     color: theme.background,

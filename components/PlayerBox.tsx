@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { 
-  TouchableOpacity, 
   Text, 
   StyleSheet, 
   View,
   ViewStyle,
-  Pressable,
+  TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { GamePlayer, Player } from '../lib/supabase';
 import { PlayerStatsModal } from './PlayerStatsModal';
+import { ProfileAvatar } from './ProfileAvatar';
 import { FONTS } from '../constants/fonts';
 
 interface PlayerBoxProps {
@@ -37,86 +38,60 @@ export const PlayerBox: React.FC<PlayerBoxProps> = ({
   style,
 }) => {
   const [showStatsModal, setShowStatsModal] = useState(false);
-  const [isLongPress, setIsLongPress] = useState(false);
-
-  const handlePressIn = () => {
-    // Start timer for long press detection
-    const timer = setTimeout(() => {
-      setIsLongPress(true);
-      setShowStatsModal(true);
-    }, 200); // 200ms to detect as long press
-    
-    // Store timer to clear it if needed
-    (global as any).playerBoxTimer = timer;
-  };
-
-  const handlePressOut = () => {
-    // Clear the timer
-    if ((global as any).playerBoxTimer) {
-      clearTimeout((global as any).playerBoxTimer);
-    }
-    
-    // If it was a long press, hide modal on release
-    if (isLongPress) {
-      setShowStatsModal(false);
-      setIsLongPress(false);
-    }
-  };
-
-  const handlePress = () => {
-    // If it wasn't a long press, show modal on tap
-    if (!isLongPress) {
-      setShowStatsModal(true);
-    }
-  };
 
   return (
     <>
-      <Pressable
+      <TouchableOpacity
+        onPress={onPress}
         style={[
           styles.container,
           isSelected && styles.selected,
           gamePlayer.team === 'A' ? styles.teamA : styles.teamB,
           style,
         ]}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={handlePress}
       >
-      <View style={styles.header}>
-        <Text style={styles.jersey}>
-          {player.jersey_num || '--'}
-        </Text>
-        <Text style={styles.name} numberOfLines={1}>
-          {player.name}
-        </Text>
-      </View>
-      
-      {stats && (
-        <View style={styles.statsContainer}>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>PTS</Text>
-            <Text style={styles.statValue}>{stats.points}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>REB</Text>
-            <Text style={styles.statValue}>{stats.rebounds}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>AST</Text>
-            <Text style={styles.statValue}>{stats.assists}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>STL</Text>
-            <Text style={styles.statValue}>{stats.steals}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>BLK</Text>
-            <Text style={styles.statValue}>{stats.blocks}</Text>
-          </View>
+        <View style={styles.header}>
+          <ProfileAvatar 
+            imageUrl={player.profile_image_url}
+            size={40}
+          />
+          <Text style={styles.name} numberOfLines={1}>
+            {player.name}
+          </Text>
+          <TouchableOpacity 
+            style={styles.statsButton}
+            onPress={() => setShowStatsModal(true)}
+          >
+            <Ionicons name="stats-chart" size={16} color="#fff" />
+          </TouchableOpacity>
         </View>
-      )}
-      </Pressable>
+        
+        {stats && (
+          <View style={styles.statsContainer}>
+            <View style={styles.statRow}>
+              <Text style={styles.statLabel}>PTS</Text>
+              <Text style={styles.statValue}>{stats.points}</Text>
+            </View>
+            <View style={styles.statRow}>
+              <Text style={styles.statLabel}>REB</Text>
+              <Text style={styles.statValue}>{stats.rebounds}</Text>
+            </View>
+            <View style={styles.statRow}>
+              <Text style={styles.statLabel}>AST</Text>
+              <Text style={styles.statValue}>{stats.assists}</Text>
+            </View>
+            <View style={styles.statRow}>
+              <Text style={styles.statLabel}>STL</Text>
+              <Text style={styles.statValue}>{stats.steals}</Text>
+            </View>
+            <View style={styles.statRow}>
+              <Text style={styles.statLabel}>BLK</Text>
+              <Text style={styles.statValue}>{stats.blocks}</Text>
+            </View>
+          </View>
+        )}
+        
+      </TouchableOpacity>
 
       <PlayerStatsModal
         visible={showStatsModal}
@@ -156,14 +131,28 @@ export const PlayerBox: React.FC<PlayerBoxProps> = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#37464D',
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#2B373F',
+    paddingTop: 2,
+    paddingBottom: 6,
+    paddingLeft: 8,
+    paddingRight: 8,
+    borderWidth: 3,
+    borderColor: 'transparent',
+    borderRadius: 8,
+    marginVertical: 2,
+    marginHorizontal: 2,
+    // Add subtle border
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   selected: {
-    borderColor: '#FF6723',
-    backgroundColor: 'rgba(255, 103, 35, 0.2)',
-    borderWidth: 2,
+    borderColor: '#ffffff',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   teamA: {
     borderLeftWidth: 4,
@@ -178,20 +167,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  statsButton: {
+    marginLeft: 8,
+    padding: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 4,
+  },
   jersey: {
-    fontSize: 24,
-    fontFamily: FONTS.orbitron.bold,
-    marginRight: 8,
-    minWidth: 40,
-    color: '#fff',
+    fontSize: 14,
+    fontFamily: FONTS.orbitron.medium,
+    marginLeft: 8,
+    minWidth: 30,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'right',
   },
   name: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: FONTS.orbitron.medium,
     flex: 1,
     color: '#fff',
+    marginLeft: 12,
   },
   statsContainer: {
+    marginTop: -2,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },

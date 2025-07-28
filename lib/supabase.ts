@@ -20,6 +20,7 @@ export interface Player {
   user_id: string;
   name: string;
   jersey_num?: string;
+  profile_image_url?: string;
   is_guest: boolean;
   created_at: string;
 }

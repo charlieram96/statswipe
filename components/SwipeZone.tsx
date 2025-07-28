@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { EventType, GamePlayer, Player } from '../lib/supabase';
 import { FONTS } from '../constants/fonts';
+import { StealFromModal } from './StealFromModal';
+import { FoulOnModal } from './FoulOnModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -49,14 +51,20 @@ interface SwipeZoneProps {
   allPlayers: { [key: string]: Player };
   teamA: GamePlayer[];
   teamB: GamePlayer[];
+  selectedPlayer?: GamePlayer | null;
+  onPlayerDeselected?: () => void;
+  gameMode?: 1 | 2 | 3 | 4 | 5 | null;
 }
 
-export const SwipeZone: React.FC<SwipeZoneProps> = ({
+export const SwipeZone: React.FC<SwipeZoneProps> = React.memo(({
   onStatRecorded,
   disabled = false,
   allPlayers,
   teamA,
   teamB,
+  selectedPlayer,
+  onPlayerDeselected,
+  gameMode,
 }) => {
   // Add prop validation to prevent crashes
   if (!onStatRecorded || !allPlayers || !teamA || !teamB) {
@@ -66,149 +74,228 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
 
   const insets = useSafeAreaInsets();
   
-  // The stat zones should cover the entire screen height above the swipe zone
-  const SWIPE_ZONE_HEIGHT = insets.bottom + 120; // Fixed height for swipe zone
-  const STAT_ZONES_HEIGHT = height - insets.bottom - SWIPE_ZONE_HEIGHT - insets.top - 10;
-  const ZONE_HEIGHT = STAT_ZONES_HEIGHT / 2;
-  const ZONE_WIDTH = width / 4; // 4 columns for consistent layout
+  // Memoize calculations to avoid re-calculations during render
+  const dimensions = React.useMemo(() => {
+    const swipeZoneHeight = insets.bottom + 120;
+    const statZonesHeight = height - swipeZoneHeight - insets.top - 8;
+    const rowHeight = statZonesHeight / 3;
+    const swipeZoneTop = statZonesHeight + insets.top;
+    const statZonesTop = insets.top;
+    
+    return {
+      SWIPE_ZONE_HEIGHT: swipeZoneHeight,
+      STAT_ZONES_HEIGHT: statZonesHeight,
+      ROW_HEIGHT: rowHeight,
+      SWIPE_ZONE_TOP: swipeZoneTop,
+      STAT_ZONES_TOP: statZonesTop,
+    };
+  }, [insets.bottom, insets.top]);
   
-  const SWIPE_ZONE_TOP = STAT_ZONES_HEIGHT;
-  const STAT_ZONES_TOP = 0; 
+  const { SWIPE_ZONE_HEIGHT, STAT_ZONES_HEIGHT, ROW_HEIGHT, SWIPE_ZONE_TOP, STAT_ZONES_TOP } = dimensions; 
   
-  // Define screen zones as a grid layout (4x2 grid covering full height above swipe zone)
-  const STAT_ZONES = {
-    // Top row (4 squares, each taking 1/4 width)
-    block: { 
-      x: 0, 
-      y: STAT_ZONES_TOP, 
-      width: ZONE_WIDTH, 
-      height: ZONE_HEIGHT, 
-      label: 'BLOCK',
-      icon: 'shield',
-      color: 'rgba(50, 50, 50, 0.95)',
-      highlightColor: 'rgba(70, 70, 70, 1.0)'
-    },
-    turnover: { 
-      x: ZONE_WIDTH, 
-      y: STAT_ZONES_TOP, 
-      width: ZONE_WIDTH, 
-      height: ZONE_HEIGHT, 
-      label: 'TURNOVER',
-      icon: 'sync-outline',
-      color: 'rgba(60, 40, 40, 0.95)',
-      highlightColor: 'rgba(80, 50, 50, 1.0)'
-    },
-    foul: { 
-      x: ZONE_WIDTH * 2, 
-      y: STAT_ZONES_TOP, 
-      width: ZONE_WIDTH, 
-      height: ZONE_HEIGHT, 
-      label: 'FOUL',
-      icon: 'alert-circle',
-      color: 'rgba(60, 60, 40, 0.95)',
-      highlightColor: 'rgba(80, 80, 50, 1.0)'
-    },
-    steal: { 
-      x: ZONE_WIDTH * 3, 
-      y: STAT_ZONES_TOP, 
-      width: ZONE_WIDTH, 
-      height: ZONE_HEIGHT, 
-      label: 'STEAL',
-      icon: 'hand-right-outline',
-      color: 'rgba(40, 60, 40, 0.95)',
-      highlightColor: 'rgba(50, 80, 50, 1.0)'
-    },
-    // Bottom row (4 squares, each taking 1/4 width)
-    shot2_attempt: { 
-      x: 0, 
-      y: STAT_ZONES_TOP + ZONE_HEIGHT, 
-      width: ZONE_WIDTH, 
-      height: ZONE_HEIGHT, 
-      label: '2PT',
-      icon: 'basketball',
-      color: 'rgba(40, 50, 60, 0.95)',
-      highlightColor: 'rgba(50, 65, 80, 1.0)'
-    },
-    shot3_attempt: { 
-      x: ZONE_WIDTH, 
-      y: STAT_ZONES_TOP + ZONE_HEIGHT, 
-      width: ZONE_WIDTH, 
-      height: ZONE_HEIGHT, 
-      label: '3PT',
-      icon: 'radio-button-on-outline',
-      color: 'rgba(50, 40, 60, 0.95)',
-      highlightColor: 'rgba(65, 50, 80, 1.0)'
-    },
-    rebound: { 
-      x: ZONE_WIDTH * 2, 
-      y: STAT_ZONES_TOP + ZONE_HEIGHT, 
-      width: ZONE_WIDTH, 
-      height: ZONE_HEIGHT, 
-      label: 'REBOUND',
-      icon: 'trending-up',
-      color: 'rgba(60, 50, 40, 0.95)',
-      highlightColor: 'rgba(80, 65, 50, 1.0)'
-    },
-    assist: { 
-      x: ZONE_WIDTH * 3, 
-      y: STAT_ZONES_TOP + ZONE_HEIGHT, 
-      width: ZONE_WIDTH, 
-      height: ZONE_HEIGHT, 
-      label: 'ASSIST',
-      icon: 'people',
-      color: 'rgba(40, 60, 50, 0.95)',
-      highlightColor: 'rgba(50, 80, 65, 1.0)'
-    },
+  // Define screen zones as a 3-row layout
+  const getStatZones = () => {
+    // Base zones that don't change
+    const baseZones = {
+      // Row 1: TURNOVER, BLOCK (2 zones, 50% width each)
+      turnover: { 
+        x: 0, // Start from left edge
+        y: STAT_ZONES_TOP, 
+        width: width * 0.5, // 50% width
+        height: ROW_HEIGHT, 
+        label: 'TURNOVER',
+        icon: 'sync-outline',
+        color: 'rgba(60, 40, 40, 0.95)',
+        highlightColor: 'rgba(80, 50, 50, 1.0)'
+      },
+      block: { 
+        x: width * 0.5, // Start from middle
+        y: STAT_ZONES_TOP, 
+        width: width * 0.5, // 50% width
+        height: ROW_HEIGHT, 
+        label: 'BLOCK',
+        icon: 'shield',
+        color: 'rgba(50, 50, 50, 0.95)',
+        highlightColor: 'rgba(70, 70, 70, 1.0)'
+      },
+      
+      // Row 2: STEAL, FOUL (2 zones, 50% width each)
+      steal: { 
+        x: 0, // Start from left edge
+        y: STAT_ZONES_TOP + ROW_HEIGHT, 
+        width: width * 0.5, // 50% width
+        height: ROW_HEIGHT, 
+        label: 'STEAL',
+        icon: 'hand-right-outline',
+        color: 'rgba(40, 60, 40, 0.95)',
+        highlightColor: 'rgba(50, 80, 50, 1.0)'
+      },
+      foul: { 
+        x: width * 0.5, // Start from middle
+        y: STAT_ZONES_TOP + ROW_HEIGHT, 
+        width: width * 0.5, // 50% width
+        height: ROW_HEIGHT, 
+        label: 'FOUL',
+        icon: 'alert-circle',
+        color: 'rgba(60, 60, 40, 0.95)',
+        highlightColor: 'rgba(80, 80, 50, 1.0)'
+      },
+      
+      // Row 3: 3PT ATTEMPT, 2PT ATTEMPT, REBOUND (3 zones)
+      shot3_attempt: { 
+        x: 0, 
+        y: STAT_ZONES_TOP + (ROW_HEIGHT * 2), 
+        width: width / 3, 
+        height: ROW_HEIGHT, 
+        label: '3PT ATTEMPT',
+        icon: 'radio-button-on-outline',
+        color: 'rgba(50, 40, 60, 0.95)',
+        highlightColor: 'rgba(65, 50, 80, 1.0)'
+      },
+      shot2_attempt: { 
+        x: width / 3, 
+        y: STAT_ZONES_TOP + (ROW_HEIGHT * 2), 
+        width: width / 3, 
+        height: ROW_HEIGHT, 
+        label: '2PT ATTEMPT',
+        icon: 'basketball',
+        color: 'rgba(40, 50, 60, 0.95)',
+        highlightColor: 'rgba(50, 65, 80, 1.0)'
+      },
+      rebound: { 
+        x: (width / 3) * 2, 
+        y: STAT_ZONES_TOP + (ROW_HEIGHT * 2), 
+        width: width / 3, 
+        height: ROW_HEIGHT, 
+        label: 'REBOUND',
+        icon: 'trending-up',
+        color: 'rgba(60, 50, 40, 0.95)',
+        highlightColor: 'rgba(80, 65, 50, 1.0)'
+      },
+    };
+
+    return baseZones;
   };
 
   const [isActive, setIsActive] = useState(false);
   const [currentPosition, setCurrentPosition] = useState({ x: -1, y: -1 });
-  const [selectedStat, setSelectedStat] = useState<EventType | 'shot2_attempt' | 'shot3_attempt' | 'assist' | null>(null);
-  const [showPlayerSelect, setShowPlayerSelect] = useState(false);
   const [showAssistModal, setShowAssistModal] = useState(false);
+  const [showStealFromModal, setShowStealFromModal] = useState(false);
+  const [showFoulOnModal, setShowFoulOnModal] = useState(false);
   const [hasMovedOverStatZone, setHasMovedOverStatZone] = useState(false);
-  const [trailPoints, setTrailPoints] = useState<TrailPoint[]>([]);
+  const [hoveredZone, setHoveredZone] = useState<string | null>(null);
+  const [shotContext, setShotContext] = useState<'2pt' | '3pt' | null>(null);
   
   const lastHoveredZoneRef = useRef<string | null>(null);
   const trailOpacity = useRef(new Animated.Value(0)).current;
 
-  const getZoneAtPosition = (x: number, y: number): EventType | 'shot2_attempt' | 'shot3_attempt' | 'assist' | null => {
-    for (const [eventType, zone] of Object.entries(STAT_ZONES)) {
+  const getZoneAtPosition = (x: number, y: number): EventType | 'shot2_attempt' | 'shot3_attempt' | 'shot2_make' | 'shot2_miss' | 'shot3_make' | 'shot3_miss' | null => {
+    const zones = getCurrentStatZones();
+    for (const [eventType, zone] of Object.entries(zones)) {
       if (
         x >= zone.x &&
         x <= zone.x + zone.width &&
         y >= zone.y &&
         y <= zone.y + zone.height
       ) {
-        return eventType as EventType | 'shot2_attempt' | 'shot3_attempt' | 'assist';
+        return eventType as EventType | 'shot2_attempt' | 'shot3_attempt' | 'shot2_make' | 'shot2_miss' | 'shot3_make' | 'shot3_miss';
       }
     }
     return null;
   };
 
+  // Get current stat zones (including dynamic transformations)
+  const getCurrentStatZones = () => {
+    const baseZones = getStatZones();
+    
+    // If hovering over shot attempts, transform other zones
+    if (hoveredZone === 'shot2_attempt') {
+      return {
+        turnover: baseZones.turnover,
+        block: baseZones.block,
+        steal: baseZones.steal,
+        foul: baseZones.foul,
+        shot2_attempt: baseZones.shot2_attempt,
+        shot2_make: {
+          ...baseZones.shot3_attempt,
+          label: '2PT MAKE',
+          icon: 'checkmark-circle',
+          color: 'rgba(40, 80, 40, 0.95)',
+          highlightColor: 'rgba(50, 100, 50, 1.0)'
+        },
+        shot2_miss: {
+          ...baseZones.rebound,
+          label: '2PT MISS',
+          icon: 'close-circle',
+          color: 'rgba(80, 40, 40, 0.95)',
+          highlightColor: 'rgba(100, 50, 50, 1.0)'
+        }
+      };
+    } else if (hoveredZone === 'shot3_attempt') {
+      return {
+        turnover: baseZones.turnover,
+        block: baseZones.block,
+        steal: baseZones.steal,
+        foul: baseZones.foul,
+        shot3_attempt: baseZones.shot3_attempt,
+        shot3_make: {
+          ...baseZones.shot2_attempt,
+          label: '3PT MAKE',
+          icon: 'checkmark-circle',
+          color: 'rgba(40, 80, 40, 0.95)',
+          highlightColor: 'rgba(50, 100, 50, 1.0)'
+        },
+        shot3_miss: {
+          ...baseZones.rebound,
+          label: '3PT MISS',
+          icon: 'close-circle',
+          color: 'rgba(80, 40, 40, 0.95)',
+          highlightColor: 'rgba(100, 50, 50, 1.0)'
+        }
+      };
+    }
+    
+    return baseZones;
+  };
+
+  const trailRef = useRef<TrailPoint[]>([]);
+  const [, bump] = useState(0);      // dummy to force render
+  const lastFrame = useRef(0);
+
+  const clearTrail = () => {
+    trailRef.current = [];
+    trailOpacity.setValue(0);
+  };
+
+  const lastRenderRef = useRef(0);
   // Trail utility functions
   const addTrailPoint = useCallback((x: number, y: number) => {
     const now = Date.now();
-    setTrailPoints(prevPoints => {
-      // Remove points older than 500ms and limit to 25 points for performance
-      const filteredPoints = prevPoints.filter(point => now - point.timestamp < 500);
-      const limitedPoints = filteredPoints.slice(-24); // Keep last 24 points + new one = 25
-      
-      // Only add point if it's significantly different from the last point (reduces noise)
-      const lastPoint = limitedPoints[limitedPoints.length - 1];
-      if (lastPoint) {
-        const distance = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2));
-        if (distance < 3) return limitedPoints; // Skip if movement is too small
-      }
-      
-      return [...limitedPoints, { x, y, timestamp: now }];
-    });
+    // keep recent 500 ms
+    const pts = trailRef.current.filter(p => now - p.timestamp < 500).slice(-50);
+    const last = pts[pts.length - 1];
+    if (!last || Math.hypot(x - last.x, y - last.y) >= 3) {
+      pts.push({ x, y, timestamp: now });
+      trailRef.current = pts;
+    }
+    // throttle re-render to 30 fps
+    if (now - lastFrame.current > 33) {
+      lastFrame.current = now;
+      bump(n => n + 1);
+    }
   }, []);
 
-  const clearTrail = useCallback(() => {
-    setTrailPoints([]);
-    trailOpacity.setValue(0);
-  }, []);
+  // Clear state when player is deselected
+  useEffect(() => {
+    if (!selectedPlayer) {
+      setIsActive(false);
+      setCurrentPosition({ x: -1, y: -1 });
+      setHasMovedOverStatZone(false);
+      setHoveredZone(null);
+      lastHoveredZoneRef.current = null;
+      clearTrail();
+    }
+  }, [selectedPlayer, clearTrail]);
 
   const fadeOutTrail = useCallback(() => {
     Animated.timing(trailOpacity, {
@@ -216,7 +303,7 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
       duration: 300,
       useNativeDriver: true,
     }).start(() => {
-      setTrailPoints([]);
+      trailRef.current = [];
     });
   }, []);
 
@@ -281,9 +368,9 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
 
   // Trail renderer component
   const renderTrail = () => {
-    if (trailPoints.length < 2) return null;
+    if (trailRef.current.length < 2) return null;
     
-    const trailSegments = generateTaperedTrailPaths(trailPoints);
+    const trailSegments = generateTaperedTrailPaths(trailRef.current);
     if (trailSegments.length === 0) return null;
     
     return (
@@ -304,7 +391,7 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
               {/* Outer glow for each segment */}
               <Path
                 d={segment.path}
-                stroke="rgba(255,255,255,0.2)"
+                stroke="rgba(255, 255, 255, 0.2)"
                 strokeWidth={segment.width + 4}
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -340,12 +427,13 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
     );
   };
 
+
   const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => !disabled,
-    onMoveShouldSetPanResponder: () => !disabled,
+    onStartShouldSetPanResponder: () => !disabled && !!selectedPlayer,
+    onMoveShouldSetPanResponder: () => !disabled && !!selectedPlayer,
     
     onPanResponderGrant: (event: GestureResponderEvent) => {
-      if (disabled) return;
+      if (disabled || !selectedPlayer) return;
       
       try {
         const { pageX, pageY } = event.nativeEvent;
@@ -355,9 +443,10 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
         lastHoveredZoneRef.current = null;
         setCurrentPosition({ x: pageX, y: pageY });
         
-        // Initialize trail with offset correction
+        // Initialize trail
+        // Use locationY (relative to swipe zone) + SWIPE_ZONE_TOP to get absolute position
         clearTrail();
-        addTrailPoint(pageX, pageY - 95);
+        addTrailPoint(pageX, pageY);
         trailOpacity.setValue(1);
         
         lightHaptic();
@@ -368,18 +457,20 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
     },
     
     onPanResponderMove: (event: GestureResponderEvent) => {
-      if (disabled) return;
+      if (disabled || !selectedPlayer) return;
       
       try {
         const { pageX, pageY } = event.nativeEvent;
         
         setCurrentPosition({ x: pageX, y: pageY });
         
-        // Add trail point with offset correction (finger appears ~70px higher than pageY)
-        addTrailPoint(pageX, pageY - 95);
-        
-        // Check if user has moved over a stat zone
+        // Add trail point
+        // Use locationY + SWIPE_ZONE_TOP for correct absolute position
+        addTrailPoint(pageX, pageY);
         const currentZone = getZoneAtPosition(pageX, pageY);
+        
+        // Update hovered zone for dynamic transformations
+        setHoveredZone(currentZone);
         
         // Vibrate when entering a new zone for the first time during this gesture
         if (currentZone && currentZone !== lastHoveredZoneRef.current) {
@@ -396,13 +487,16 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
     },
     
     onPanResponderRelease: (event: GestureResponderEvent) => {
-      if (disabled) return;
+      if (disabled || !selectedPlayer) return;
+      
+      // Only process release if gesture was active
+      if (!isActive) return;
       
       try {
         const { pageX, pageY } = event.nativeEvent;
         
-        // Add final trail point with offset correction
-        addTrailPoint(pageX, pageY - 95);
+        // Add final trail point
+        addTrailPoint(pageX, pageY);
         
         // Check if user ended in swipe zone after moving over stat zones (cancel action)
         const isInSwipeZone = pageY >= SWIPE_ZONE_TOP;
@@ -410,19 +504,72 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
         if (hasMovedOverStatZone && isInSwipeZone) {
           console.log('Gesture canceled - returned to swipe zone');
           lightHaptic();
+          // Deselect player when canceling
+          if (onPlayerDeselected) {
+            onPlayerDeselected();
+          }
         } else {
           const eventType = getZoneAtPosition(pageX, pageY);
           
-          if (eventType) {
-            console.log('Stat selected:', eventType);
+          if (eventType && selectedPlayer) {
+            console.log('Stat selected:', eventType, 'for player:', selectedPlayer.id);
             mediumHaptic();
             
-            // Select the stat and show player selection
-            setSelectedStat(eventType);
-            setShowPlayerSelect(true);
-          } else {
+            // Handle different stat types with new behaviors
+            if (eventType === 'steal') {
+              // Show modal to select who was stolen from
+              setShowStealFromModal(true);
+            } else if (eventType === 'foul') {
+              // Show modal to select who was fouled
+              setShowFoulOnModal(true);
+            } else if (eventType === 'shot2_attempt' || eventType === 'shot3_attempt') {
+              // Record the shot attempt
+              setShotContext(eventType === 'shot2_attempt' ? '2pt' : '3pt');
+              onStatRecorded(eventType, selectedPlayer.id);
+              // Only ask about assist if not 1v1 mode
+              if (gameMode !== 1) {
+                setShowAssistModal(true);
+              } else {
+                // In 1v1, just deselect player
+                if (onPlayerDeselected) {
+                  onPlayerDeselected();
+                }
+              }
+            } else if (eventType === 'shot2_make' || eventType === 'shot2_miss' || eventType === 'shot3_make' || eventType === 'shot3_miss') {
+              // Handle shot make/miss from dynamic zones
+              onStatRecorded(eventType, selectedPlayer.id);
+              // Ask about assist if it was a make (and not 1v1 mode)
+              if (eventType === 'shot2_make' || eventType === 'shot3_make') {
+                setShotContext(eventType === 'shot2_make' ? '2pt' : '3pt');
+                if (gameMode !== 1) {
+                  setShowAssistModal(true);
+                } else {
+                  // In 1v1, just deselect player
+                  if (onPlayerDeselected) {
+                    onPlayerDeselected();
+                  }
+                }
+              } else {
+                // No assist for misses, just deselect
+                if (onPlayerDeselected) {
+                  onPlayerDeselected();
+                }
+              }
+            } else {
+              // For turnover, block, rebound - record directly
+              onStatRecorded(eventType, selectedPlayer.id);
+              // Deselect player after recording
+              if (onPlayerDeselected) {
+                onPlayerDeselected();
+              }
+            }
+          } else if (!eventType) {
             console.log('Swipe outside any zone');
             lightHaptic();
+            // Deselect player when swiping outside zones
+            if (onPlayerDeselected) {
+              onPlayerDeselected();
+            }
           }
         }
         
@@ -437,6 +584,7 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
       setIsActive(false);
       setCurrentPosition({ x: -1, y: -1 });
       setHasMovedOverStatZone(false);
+      setHoveredZone(null);
       lastHoveredZoneRef.current = null;
     },
     
@@ -445,6 +593,7 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
       setIsActive(false);
       setCurrentPosition({ x: -1, y: -1 });
       setHasMovedOverStatZone(false);
+      setHoveredZone(null);
       lastHoveredZoneRef.current = null;
       
       // Clear trail immediately
@@ -452,45 +601,95 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
     },
   });
 
-  const handlePlayerSelect = useCallback((playerId: string) => {
-    if (!selectedStat) return;
-    
-    console.log('Player selected:', playerId, 'for stat:', selectedStat);
-    
-    // Record the stat for this player
-    onStatRecorded(selectedStat, playerId);
-    
-    // If it's a shot, ask about assist
-    if (selectedStat === 'shot2_attempt' || selectedStat === 'shot3_attempt') {
-      setShowAssistModal(true);
-    } else {
-      // Clear selection
-      setSelectedStat(null);
-    }
-    
-    setShowPlayerSelect(false);
-  }, [selectedStat, onStatRecorded]);
 
   const handleAssistSelect = useCallback((assistPlayerId: string | null) => {
     setShowAssistModal(false);
+    setShotContext(null);
     
     if (assistPlayerId) {
       // Record assist for the selected player
       onStatRecorded('assist', assistPlayerId);
     }
     
-    // Clear selection
-    setSelectedStat(null);
-  }, [onStatRecorded]);
+    // Clear selection and deselect player
+    if (onPlayerDeselected) {
+      onPlayerDeselected();
+    }
+  }, [onStatRecorded, onPlayerDeselected]);
+
+  const handleStealFromSelect = useCallback((gamePlayerId: string) => {
+    setShowStealFromModal(false);
+    
+    if (selectedPlayer) {
+      // Record turnover for the victim (if not team)
+      if (gamePlayerId !== 'team') {
+        onStatRecorded('turnover', gamePlayerId);
+      }
+      
+      // Record steal for the original player
+      onStatRecorded('steal', selectedPlayer.id);
+    }
+    
+    // Clear selection and deselect player
+    if (onPlayerDeselected) {
+      onPlayerDeselected();
+    }
+  }, [selectedPlayer, onStatRecorded, onPlayerDeselected]);
+
+  const handleStealFromTeam = useCallback(() => {
+    setShowStealFromModal(false);
+    
+    if (selectedPlayer) {
+      // Only record steal for the original player (no individual turnover)
+      onStatRecorded('steal', selectedPlayer.id);
+    }
+    
+    // Clear selection and deselect player
+    if (onPlayerDeselected) {
+      onPlayerDeselected();
+    }
+  }, [selectedPlayer, onStatRecorded, onPlayerDeselected]);
+
+  const handleFoulOnSelect = useCallback((gamePlayerId: string) => {
+    setShowFoulOnModal(false);
+    
+    if (selectedPlayer) {
+      // Record foul for the fouling player (the selected player)
+      onStatRecorded('foul', selectedPlayer.id);
+      
+      // The person who was fouled doesn't get a negative stat recorded
+      // (fouls are tracked on the person who committed them)
+    }
+    
+    // Clear selection and deselect player
+    if (onPlayerDeselected) {
+      onPlayerDeselected();
+    }
+  }, [selectedPlayer, onStatRecorded, onPlayerDeselected]);
+
+  const handleFoulOnTeam = useCallback(() => {
+    setShowFoulOnModal(false);
+    
+    if (selectedPlayer) {
+      // Record technical/general foul for the fouling player
+      onStatRecorded('foul', selectedPlayer.id);
+    }
+    
+    // Clear selection and deselect player
+    if (onPlayerDeselected) {
+      onPlayerDeselected();
+    }
+  }, [selectedPlayer, onStatRecorded, onPlayerDeselected]);
 
   const renderStatZones = () => {
     if (!isActive) return null;
 
     const currentZone = getZoneAtPosition(currentPosition.x, currentPosition.y);
+    const zones = getCurrentStatZones();
 
     return (
       <View style={styles.zonesOverlay}>
-        {Object.entries(STAT_ZONES).map(([eventType, zone]) => {
+        {Object.entries(zones).map(([eventType, zone]) => {
           const isHighlighted = currentZone === eventType;
           
           return (
@@ -531,6 +730,14 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
   const currentZone = getZoneAtPosition(currentPosition.x, currentPosition.y);
   const isHoveringOverZone = currentZone !== null;
 
+  // Get opposite team players for steal/foul modals
+  const getOppositeTeamPlayers = () => {
+    if (!selectedPlayer) return [];
+    const selectedTeam = selectedPlayer.team;
+    const oppositeTeam = selectedTeam === 'A' ? 'B' : 'A';
+    return oppositeTeam === 'A' ? teamA : teamB;
+  };
+
   try {
     return (
       <>
@@ -545,7 +752,7 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
               styles.swipeZone,
               isActive && !isHoveringOverZone && styles.activeSwipeZone,
               isActive && isHoveringOverZone && styles.cancelSwipeZone,
-              disabled && styles.disabledSwipeZone
+              (disabled || !selectedPlayer) && styles.disabledSwipeZone
             ]}
           >
             <View style={styles.swipeZoneContent}>
@@ -562,58 +769,14 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
                 disabled && styles.disabledInstructionText
               ]}>
                 {isActive && isHoveringOverZone ? 'Release here to cancel' : 
-                 isActive ? 'Swipe to a stat zone' : 'Touch here to start a swipe'}
+                 isActive ? 'Swipe to a stat zone' : 
+                 selectedPlayer ? `Swipe for ${allPlayers[selectedPlayer.player_id]?.name || 'Player'}` :
+                 'Select a player first'}
               </Text>
             </View>
           </View>
         </View>
 
-        {/* Player Selection Modal */}
-        <Modal
-          visible={showPlayerSelect}
-          transparent
-          animationType="slide"
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                Who {selectedStat?.replace('_attempt', '') || 'recorded this stat'}?
-              </Text>
-              
-              <View style={styles.playerList}>
-                {[...teamA, ...teamB].map((gamePlayer) => {
-                  if (!gamePlayer || !gamePlayer.id) return null;
-                  const player = allPlayers[gamePlayer.player_id];
-                  return (
-                    <TouchableOpacity
-                      key={gamePlayer.id}
-                      style={styles.playerOption}
-                      onPress={() => handlePlayerSelect(gamePlayer.id)}
-                    >
-                      <Text style={styles.playerOptionText}>
-                        {player?.name || 'Unknown'} 
-                        {player?.jersey_num && ` (#${player.jersey_num})`}
-                      </Text>
-                      <Text style={styles.teamIndicator}>
-                        Team {gamePlayer.team}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => {
-                  setShowPlayerSelect(false);
-                  setSelectedStat(null);
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
 
         {/* Assist Modal */}
         <Modal
@@ -626,8 +789,8 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
               <Text style={styles.modalTitle}>Was there an assist?</Text>
               
               <View style={styles.playerList}>
-                {[...teamA, ...teamB].map((gamePlayer) => {
-                  if (!gamePlayer || !gamePlayer.id) return null;
+                {(selectedPlayer?.team === 'A' ? teamA : teamB).map((gamePlayer) => {
+                  if (!gamePlayer || !gamePlayer.id || gamePlayer.id === selectedPlayer?.id) return null;
                   const player = allPlayers[gamePlayer.player_id];
                   return (
                     <TouchableOpacity
@@ -656,6 +819,26 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
             </View>
           </View>
         </Modal>
+
+        {/* Steal From Modal */}
+        <StealFromModal
+          visible={showStealFromModal}
+          onClose={() => setShowStealFromModal(false)}
+          onSelectPlayer={handleStealFromSelect}
+          onSelectTeam={handleStealFromTeam}
+          oppositeTeamPlayers={getOppositeTeamPlayers()}
+          allPlayers={allPlayers}
+        />
+
+        {/* Foul On Modal */}
+        <FoulOnModal
+          visible={showFoulOnModal}
+          onClose={() => setShowFoulOnModal(false)}
+          onSelectPlayer={handleFoulOnSelect}
+          onSelectTeam={handleFoulOnTeam}
+          oppositeTeamPlayers={getOppositeTeamPlayers()}
+          allPlayers={allPlayers}
+        />
       </>
     );
   } catch (error) {
@@ -666,7 +849,7 @@ export const SwipeZone: React.FC<SwipeZoneProps> = ({
       </View>
     );
   }
-};
+});
 
 const styles = StyleSheet.create({
   container: {
